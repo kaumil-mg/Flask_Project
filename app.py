@@ -1,10 +1,14 @@
-from flask import Flask, request, render_template, redirect, url_for
-import mysql.connector
-import os
+from flask import Flask, render_template, request, redirect
 from werkzeug.utils import secure_filename
+import os
+import mysql.connector
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = 'uploads/gallery'
+app.secret_key = 'your_secret_key'
+
+# Ensure the uploads and gallery folders exist
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # MySQL configurations
 db = mysql.connector.connect(
@@ -15,16 +19,17 @@ db = mysql.connector.connect(
     database="product_db"
 )
 
-cursor = db.cursor()
+@app.route('/')
+def home():
+    return redirect('/add-product')
 
-@app.route('/', methods=['GET', 'POST'])
-def submit_product():
+@app.route('/add-product', methods=['GET', 'POST'])
+def add_product():
     if request.method == 'POST':
         product_name = request.form['product_name']
         category = request.form['category']
         features = request.form['features']
-        
-        # Handling file uploads
+
         product_image = request.files['product_image']
         product_table = request.files['product_table']
         product_chart = request.files['product_chart']
@@ -33,20 +38,40 @@ def submit_product():
         table_url = secure_filename(product_table.filename)
         chart_url = secure_filename(product_chart.filename)
 
-        product_image.save(os.path.join(app.config['UPLOAD_FOLDER'], image_url))
-        product_table.save(os.path.join(app.config['UPLOAD_FOLDER'], table_url))
-        product_chart.save(os.path.join(app.config['UPLOAD_FOLDER'], chart_url))
+        product_image.save(os.path.join('uploads', image_url))
+        product_table.save(os.path.join('uploads', table_url))
+        product_chart.save(os.path.join('uploads', chart_url))
 
-        query = """
+        cursor = db.cursor()
+        cursor.execute("""
             INSERT INTO products (product_name, category, features, image_url, table_url, chart_url)
             VALUES (%s, %s, %s, %s, %s, %s)
-        """
-        cursor.execute(query, (product_name, category, features, image_url, table_url, chart_url))
+        """, (product_name, category, features, image_url, table_url, chart_url))
         db.commit()
+        cursor.close()
 
-        return redirect(url_for('submit_product'))
+        return redirect('/add-product')
 
-    return render_template('form.html')
+    return render_template('add_product.html')
 
-if __name__ == "__main__":
+@app.route('/gallery', methods=['GET', 'POST'])
+def gallery():
+    if request.method == 'POST':
+        gallery_image = request.files['gallery_image']
+        image_url = secure_filename(gallery_image.filename)
+        gallery_image.save(os.path.join(app.config['UPLOAD_FOLDER'], image_url))
+
+        cursor = db.cursor()
+        cursor.execute("""
+            INSERT INTO gallery (image_url)
+            VALUES (%s)
+        """, (image_url,))
+        db.commit()
+        cursor.close()
+
+        return redirect('/gallery')
+
+    return render_template('gallery.html')
+
+if __name__ == '__main__':
     app.run(debug=True)
